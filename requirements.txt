@@ -1,0 +1,13 @@
+openeo
+pandas
+numpy
+matplotlib
+jupyter
+nbformat
+nbconvert
+rasterio
+geopandas
+folium
+seaborn
+scipy
+
