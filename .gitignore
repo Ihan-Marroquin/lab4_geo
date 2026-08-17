@@ -13,6 +13,8 @@ data/raw/amatitlan/*
 data/processed/atitlan/*/*
 data/processed/amatitlan/*/*
 data/processed/series_temporales/*
+data/processed/resultados/
+data/processed/figuras/
 
 # Conservar la estructura y sus notas.
 !data/**/.gitkeep
@@ -20,4 +22,3 @@ data/processed/series_temporales/*
 
 # Archivos temporales de construcción y revisión.
 tmp/
-

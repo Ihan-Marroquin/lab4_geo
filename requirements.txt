@@ -10,4 +10,6 @@ geopandas
 folium
 seaborn
 scipy
-
+requests
+pystac-client
+planetary-computer
