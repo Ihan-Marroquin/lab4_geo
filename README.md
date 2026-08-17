@@ -1,9 +1,9 @@
 # Laboratorio 4 - Análisis de Datos Geoespaciales
 
 Este proyecto estudia la señal estimada de cianobacteria en los lagos Atitlán y
-Amatitlán a partir de imágenes Sentinel-2. El avance cubre los ejercicios 1 al
-4: conexión con Copernicus, selección de datos, cálculo de NDVI, NDWI y Cya, y
-preparación del análisis temporal.
+Amatitlán a partir de imágenes Sentinel-2. El laboratorio completo incluye la
+serie temporal, mapas por fecha, persistencia espacial, correlaciones con NDVI y
+NDWI, comparación entre lagos y un análisis exploratorio adicional.
 
 El archivo principal es:
 
@@ -11,10 +11,10 @@ El archivo principal es:
 notebooks/laboratorio-4-datos-geoespaciales.ipynb
 ```
 
-El notebook está organizado para leerse de arriba hacia abajo. Primero presenta
-el problema en lenguaje sencillo y después muestra el código y las salidas. Las
-funciones más largas viven en `src/procesamiento_geoespacial.py` para que el
-cuaderno no se convierta en una pared de código.
+El notebook está organizado para leerse de arriba hacia abajo. Las funciones más
+largas viven en `src/`: `procesamiento_geoespacial.py` conserva el flujo de
+openEO y `analisis_completo.py` ejecuta la consulta reproducible de las fechas
+oficiales por medio de Sentinel-2 L2A en Planetary Computer.
 
 ## Estructura
 
@@ -22,19 +22,16 @@ cuaderno no se convierta en una pared de código.
 .
 ├── data/
 │   ├── raw/                  insumos originales separados por lago
-│   └── processed/            índices, tablas y trabajos generados
-├── notebooks/                cuaderno principal del laboratorio
-├── src/                      funciones de conexión y procesamiento
-├── reports/                  figuras y borradores del informe
-├── output/
-│   ├── docx/                 informe editable
-│   └── pdf/                  informe para entregar
-├── codebook.md               descripción de datos, fechas y unidades
+│   └── processed/            índices, tablas y figuras regenerables
+├── notebooks/                cuaderno principal ejecutado
+├── src/                      conexión, descarga y análisis
+├── reports/                  informe final en PDF
+├── codebook.md               datos, fechas, unidades y criterios
 ├── requirements.txt          dependencias de Python
 └── README.md
 ```
 
-## Cómo ejecutar el avance
+## Cómo ejecutar el laboratorio
 
 1. Crear un entorno e instalar las dependencias:
 
@@ -50,20 +47,22 @@ pip install -r requirements.txt
 jupyter notebook notebooks/laboratorio-4-datos-geoespaciales.ipynb
 ```
 
-3. Ejecutar primero el cuaderno con `EJECUTAR_COPERNICUS = False`. Esto permite
-   revisar fechas, áreas y calidad de las imágenes sin iniciar trabajos remotos.
+3. Ejecutar de arriba hacia abajo. Si las tablas procesadas no están
+   disponibles, el flujo consulta automáticamente las escenas oficiales y lee
+   únicamente la ventana de cada lago.
 
-4. Cuando se tenga abierta la cuenta de Copernicus, cambiar la variable a
-   `True`, ejecutar nuevamente y completar la autenticación que aparece en el
-   navegador.
+4. Para repetir la descarga, cambiar `ACTUALIZAR_DATOS = True`. El proceso usa
+   una resolución de análisis de 120 metros para mantener el laboratorio ligero.
 
-## Salidas esperadas
+## Salidas
 
-- GeoTIFF de NDVI, NDWI y cianobacteria para ambos lagos.
-- CSV con el promedio de cianobacteria por lago y fecha.
-- Gráfico de línea con la evolución temporal y los posibles picos.
-- Mensajes breves que resumen el máximo y mínimo observado en cada lago.
+- Tabla de métricas por lago y fecha.
+- Mapas de cianobacteria para las 22 observaciones.
+- Evolución temporal, extensión de valores altos y fechas críticas.
+- Correlaciones de Cya con NDVI y NDWI.
+- Mapas de persistencia, diferencias y distribuciones por fecha.
+- Comparación entre lagos y lectura descriptiva por temporada.
 
-Los archivos grandes producidos por Copernicus no se versionan. El notebook, el
-código, el informe y las instrucciones sí deben quedar en el repositorio.
-
+Los datos procesados y las figuras regenerables no se versionan. El notebook
+ejecutado conserva las salidas principales; el código, el informe y las
+instrucciones sí quedan en el repositorio.
