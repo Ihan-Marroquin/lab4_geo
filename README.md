@@ -1,9 +1,14 @@
 # Laboratorio 4 - Análisis de Datos Geoespaciales
 
 Este proyecto estudia la señal estimada de cianobacteria en los lagos Atitlán y
-Amatitlán a partir de imágenes Sentinel-2. El laboratorio completo incluye la
-serie temporal, mapas por fecha, persistencia espacial, correlaciones con NDVI y
-NDWI, comparación entre lagos y un análisis exploratorio adicional.
+Amatitlán a partir de imágenes Sentinel-2. 
+
+- **Parte 1** (ejercicios 1-8): serie temporal, mapas por fecha, persistencia
+  espacial, correlaciones con NDVI y NDWI, comparación entre lagos y análisis
+  exploratorio adicional.
+- **Parte 2** (avance: ejercicios 1-3): construcción del dataset tabular para
+  Machine Learning, variable respuesta binaria basada en el umbral de la OMS y
+  selección de predictoras sin fuga de información.
 
 El archivo principal es:
 
@@ -13,8 +18,9 @@ notebooks/laboratorio-4-datos-geoespaciales.ipynb
 
 El notebook está organizado para leerse de arriba hacia abajo. Las funciones más
 largas viven en `src/`: `procesamiento_geoespacial.py` conserva el flujo de
-openEO y `analisis_completo.py` ejecuta la consulta reproducible de las fechas
-oficiales por medio de Sentinel-2 L2A en Planetary Computer.
+openEO, `analisis_completo.py` ejecuta la consulta reproducible de las fechas
+oficiales por medio de Sentinel-2 L2A en Planetary Computer y
+`ml_cianobacteria.py` arma el conjunto de datos de la Parte 2.
 
 ## Estructura
 
@@ -66,3 +72,21 @@ jupyter notebook notebooks/laboratorio-4-datos-geoespaciales.ipynb
 Los datos procesados y las figuras regenerables no se versionan. El notebook
 ejecutado conserva las salidas principales; el código, el informe y las
 instrucciones sí quedan en el repositorio.
+
+## Parte 2: dataset para Machine Learning
+
+`src/ml_cianobacteria.py` convierte los raster en una tabla donde cada fila es
+un píxel de agua con coordenadas, fecha, lago, bandas, NDVI, NDWI y Cya. Trae un
+autochequeo que corre sin necesidad de raster:
+
+```bash
+python -m src.ml_cianobacteria
+```
+
+La variable respuesta usa el umbral de la OMS de 100 000 células/mL (100 en las
+unidades del raster Se2WaQ), el mismo que la Parte 1 usó para los mapas.
+
+Cya se calcula como `115530.31 * ((B03 * B04) / B02) ** 2.38`, así que **B02,
+B03 y B04 quedan excluidas como predictoras**. NDVI y NDWI comparten B04 y B03
+con esa fórmula: se reportan en el dataset pero solo entran al conjunto de
+predictoras "amplio", nunca al "estricto".
