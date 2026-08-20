@@ -75,7 +75,7 @@ instrucciones sí quedan en el repositorio.
 
 ## Parte 2: dataset para Machine Learning
 
-`src/ml_cianobacteria.py` convierte los raster en una tabla donde cada fila es
+`src/ml_cianobacteria.py` convierte los resultados de la Parte 1 en una tabla donde cada fila es
 un píxel de agua con coordenadas, fecha, lago, bandas, NDVI, NDWI y Cya. Trae un
 autochequeo que corre sin necesidad de datos:
 
@@ -83,8 +83,8 @@ autochequeo que corre sin necesidad de datos:
 python -m src.ml_cianobacteria
 ```
 
-Lee de preferencia los cubos \`data/processed/resultados/cubo_<lago>.npz\` que
-genera \`python -m src.analisis_completo\`, porque ya vienen en EPSG:32615 y en
+Lee de preferencia los cubos `data/processed/resultados/cubo_<lago>.npz` que
+genera `python -m src.analisis_completo`, porque ya vienen en EPSG:32615 y en
 metros, el sistema que pide la validación espacial. Si no existen, cae a los
 GeoTIFF del flujo openEO.
 
