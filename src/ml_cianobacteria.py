@@ -18,6 +18,19 @@ from typing import Dict, Iterable, List, Optional
 import numpy as np
 import pandas as pd
 
+try:
+    # analisis_completo arrastra planetary_computer y pystac. Si no estan
+    # instalados igual se puede usar el resto del modulo, asi que se repiten
+    # las tres constantes en vez de bloquear la importacion.
+    from src.analisis_completo import (
+        CARPETA_RESULTADOS,
+        CRS_ANALISIS,
+        RESOLUCION_METROS,
+    )
+except ImportError:
+    CRS_ANALISIS = "EPSG:32615"
+    RESOLUCION_METROS = 120
+    CARPETA_RESULTADOS = None
 from src.procesamiento_geoespacial import (
     BANDAS_REFLECTANCIA,
     CARPETA_DATOS,
@@ -45,6 +58,14 @@ from src.procesamiento_geoespacial import (
 #
 UMBRAL_OMS_CEL_ML = 100_000.0
 UMBRAL_CYA = UMBRAL_OMS_CEL_ML / 1_000.0  # = 100.0 en unidades del raster
+#
+# Los cubos .npz de analisis_completo.py recortan Cya a [0, 100] porque esa es
+# la escala visual del script Se2WaQ. El recorte cae justo en el umbral de la
+# OMS: todo pixel saturado en 100 es un pixel que iguala o supera las 100 000
+# cel/mL, asi que ``cya >= UMBRAL_CYA`` sigue marcando la clase correcta. Lo
+# que se pierde es la magnitud por encima del umbral, no la clase.
+UMBRAL_OMS_VIGILANCIA_CEL_ML = 20_000.0
+UMBRAL_CYA_VIGILANCIA = UMBRAL_OMS_VIGILANCIA_CEL_ML / 1_000.0  # = 20.0
 
 # ---------------------------------------------------------------------------
 # Ejercicio 3: fuga de informacion
@@ -139,6 +160,49 @@ def _tabla_de_una_fecha(nombre_lago: str, fecha: str) -> Optional[pd.DataFrame]:
     return tabla
 
 
+def _tabla_desde_cubo(nombre_lago: str) -> Optional[pd.DataFrame]:
+    """Convierte el cubo .npz de ``analisis_completo`` en filas por pixel.
+
+    El cubo ya viene reproyectado a EPSG:32615 y en metros, que es justo el
+    sistema que pide el ejercicio 6 para los bloques espaciales.
+    """
+
+    carpeta = CARPETA_RESULTADOS or (CARPETA_DATOS / "resultados")
+    archivo = carpeta / f"cubo_{nombre_lago.lower()}.npz"
+    if not archivo.exists():
+        return None
+
+    cubo = np.load(archivo)
+    fechas = [str(f) for f in cubo["fechas"]]
+    oeste, este, sur, norte = [float(v) for v in cubo["extent"]]
+    alto, ancho = cubo["cya"].shape[1:]
+
+    # Centro de cada celda, igual que hace rasterio con offset="center".
+    xs = oeste + (np.arange(ancho) + 0.5) * RESOLUCION_METROS
+    ys = norte - (np.arange(alto) + 0.5) * RESOLUCION_METROS
+    malla_x, malla_y = np.meshgrid(xs, ys)
+
+    partes = []
+    for indice, fecha in enumerate(fechas):
+        parte = pd.DataFrame(
+            {
+                "lago": nombre_lago,
+                "fecha": pd.Timestamp(fecha),
+                "x": malla_x.ravel(),
+                "y": malla_y.ravel(),
+                "cya": cubo["cya"][indice].ravel().astype("float64"),
+                "ndvi": cubo["ndvi"][indice].ravel().astype("float64"),
+                "ndwi": cubo["ndwi"][indice].ravel().astype("float64"),
+                "valido": cubo["valido"][indice].ravel(),
+            }
+        )
+        partes.append(parte)
+
+    tabla = pd.concat(partes, ignore_index=True)
+    tabla["crs"] = CRS_ANALISIS
+    return tabla
+
+
 def construir_dataset(
     lagos: Iterable[str] = ("Atitlan", "Amatitlan"),
     guardar: bool = True,
@@ -152,6 +216,13 @@ def construir_dataset(
 
     partes: List[pd.DataFrame] = []
     for lago in lagos:
+        # Fuente preferida: el cubo .npz de analisis_completo, que ya trae las
+        # 11 fechas juntas y en EPSG:32615. Si no existe, se cae a los GeoTIFF
+        # sueltos que produce el flujo de openEO.
+        cubo = _tabla_desde_cubo(lago)
+        if cubo is not None:
+            partes.append(cubo)
+            continue
         for fecha in LAGOS[lago]["fechas"]:
             tabla = _tabla_de_una_fecha(lago, fecha)
             if tabla is None:
@@ -161,14 +232,18 @@ def construir_dataset(
 
     if not partes:
         raise FileNotFoundError(
-            "No se encontro ningun raster en data/processed. Ejecute primero la "
-            "descarga de la Parte I."
+            "No se encontraron datos. Genere los cubos con "
+            "`python -m src.analisis_completo` (Planetary Computer, sin "
+            "credenciales) o descargue los GeoTIFF de la Parte I."
         )
 
     crudo = pd.concat(partes, ignore_index=True)
     antes = len(crudo)
 
-    limpio = crudo.dropna(subset=["cya"])
+    limpio = crudo
+    if "valido" in limpio.columns:
+        limpio = limpio[limpio["valido"]].drop(columns=["valido"])
+    limpio = limpio.dropna(subset=["cya"])
     limpio = limpio[np.isfinite(limpio["cya"])]
     limpio = limpio[limpio["cya"] >= 0]
     if "ndwi" in limpio.columns:
@@ -261,8 +336,9 @@ def eda(datos: pd.DataFrame, guardar: bool = True) -> Dict[str, pd.DataFrame]:
         fig, ejes = plt.subplots(1, 2, figsize=(11, 4.4), dpi=140)
         for eje, lago in zip(ejes, datos["lago"].unique()):
             sub = datos[datos["lago"] == lago]
+            ejes_xy = ("x", "y") if "x" in datos.columns else ("lon", "lat")
             puntos = eje.scatter(
-                sub["lon"], sub["lat"],
+                sub[ejes_xy[0]], sub[ejes_xy[1]],
                 c=np.log10(sub["cya"].clip(lower=1e-3)),
                 s=1, cmap="viridis",
             )
@@ -323,7 +399,7 @@ def sensibilidad_umbral(datos: pd.DataFrame) -> pd.DataFrame:
     """Muestra como cambia el balance con otros cortes posibles."""
 
     candidatos = {
-        "OMS riesgo bajo (20 000 cel/mL)": 20.0,
+        "OMS vigilancia (20 000 cel/mL)": UMBRAL_CYA_VIGILANCIA,
         "OMS riesgo moderado (100 000 cel/mL)": UMBRAL_CYA,
         "Percentil 75 observado": float(datos["cya"].quantile(0.75)),
         "Percentil 90 observado": float(datos["cya"].quantile(0.90)),
@@ -360,16 +436,20 @@ def ingenieria_caracteristicas(datos: pd.DataFrame) -> pd.DataFrame:
 
     # Distancia relativa al centroide del lago: aproxima la cercania a la
     # orilla, donde entran los rios y se acumula la floracion.
-    centros = salida.groupby("lago")[["lon", "lat"]].transform("mean")
+    ejes = ("x", "y") if "x" in salida.columns else ("lon", "lat")
+    centros = salida.groupby("lago")[list(ejes)].transform("mean")
     salida["dist_centro"] = np.hypot(
-        salida["lon"] - centros["lon"], salida["lat"] - centros["lat"]
+        salida[ejes[0]] - centros[ejes[0]], salida[ejes[1]] - centros[ejes[1]]
     )
     return salida
 
 
+# lon/lat vienen del flujo openEO; x/y del cubo en EPSG:32615.
+COLUMNAS_COORDENADA = ("lon", "lat", "x", "y")
+
 PREDICTORES_BASE = [
     "B08", "mes", "dia_del_anio", "epoca_lluviosa",
-    "es_amatitlan", "lon", "lat", "dist_centro",
+    "es_amatitlan", "lon", "lat", "x", "y", "dist_centro",
 ]
 
 
@@ -401,8 +481,10 @@ def descripcion_predictores(datos: pd.DataFrame) -> pd.DataFrame:
         "dia_del_anio": ("Temporal", "Version continua del mes, evita el corte artificial entre diciembre y enero."),
         "epoca_lluviosa": ("Temporal", "Mayo a octubre. La escorrentia arrastra nutrientes hacia el lago."),
         "es_amatitlan": ("Categorica", "Distingue los dos lagos, que difieren en profundidad, carga de nutrientes y altitud."),
-        "lon": ("Espacial", "Posicion este-oeste de la observacion."),
-        "lat": ("Espacial", "Posicion norte-sur de la observacion."),
+        "lon": ("Espacial", "Posicion este-oeste de la observacion, en grados."),
+        "lat": ("Espacial", "Posicion norte-sur de la observacion, en grados."),
+        "x": ("Espacial", "Posicion este-oeste en metros (EPSG:32615), la que usan los bloques del ejercicio 6."),
+        "y": ("Espacial", "Posicion norte-sur en metros (EPSG:32615)."),
         "dist_centro": ("Espacial", "Distancia al centroide del lago. Las floraciones se concentran cerca de la orilla y de las desembocaduras."),
     }
     disponibles = predictores(datos, estricto=False)
@@ -449,8 +531,8 @@ def demo() -> None:
         {
             "lago": ["Atitlan"] * (n // 2) + ["Amatitlan"] * (n // 2),
             "fecha": pd.to_datetime(["2026-02-02"] * (n // 2) + ["2026-06-19"] * (n // 2)),
-            "lon": generador.uniform(-91.3, -90.5, n),
-            "lat": generador.uniform(14.4, 14.75, n),
+            "x": generador.uniform(680_000, 760_000, n),
+            "y": generador.uniform(1_610_000, 1_640_000, n),
             "cya": generador.lognormal(3.5, 1.5, n),
             "ndvi": generador.uniform(-0.3, 0.4, n),
             "ndwi": generador.uniform(0.0, 0.6, n),
@@ -467,7 +549,7 @@ def demo() -> None:
     estrictos = predictores(listo, estricto=True)
     assert "ndvi" not in estrictos and "ndwi" not in estrictos
     assert not set(estrictos) & set(COLUMNAS_PROHIBIDAS)
-    assert "B08" in estrictos and "dist_centro" in estrictos
+    assert "dist_centro" in estrictos and {"x", "y"} <= set(estrictos)
 
     amplios = predictores(listo, estricto=False)
     assert "ndvi" in amplios and "B03" not in amplios
