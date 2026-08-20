@@ -1,13 +1,7 @@
-"""
-Laboratorio 4, Parte 2. Ejercicios 1, 2 y 3.
+"""Laboratorio 4, Parte 2. Dataset para Machine Learning.
 
-Construye el conjunto de datos tabular para Machine Learning a partir de los
-raster de la Parte I, define la variable respuesta binaria y separa los
-predictores validos de los que producirian fuga de informacion.
-
-El modulo no descarga nada por si mismo salvo que se llame
-``descargar_bandas``. Todo lo demas trabaja sobre los GeoTIFF que ya estan en
-``data/processed``.
+Construye la tabla pixel a pixel, define la variable respuesta binaria y separa
+los predictores validos de los que produzcan fuga de informacion.
 """
 
 from __future__ import annotations
@@ -43,38 +37,20 @@ from src.procesamiento_geoespacial import (
     siguiente_dia,
 )
 
-# ---------------------------------------------------------------------------
-# Ejercicio 2: punto de corte de la variable respuesta
-# ---------------------------------------------------------------------------
-# El script Se2WaQ entrega la densidad estimada de cianobacteria en unidades de
-# 10^3 celulas por mililitro. La OMS usa 100 000 cel/mL como el umbral a partir
-# del cual el riesgo para la salud en aguas recreativas deja de ser bajo y pasa
-# a ser moderado (Alert Level 2 / Vigilance Level 2). En las unidades del raster
-# ese valor son 100 unidades.
-#
-#   OMS (2003). Guidelines for safe recreational water environments, Vol. 1.
-#   OMS (2021). Guidelines on recreational water quality, Vol. 1.
-#   Chorus & Welch (2021). Toxic Cyanobacteria in Water, 2a ed.
-#
+# Se2WaQ entrega la densidad en 10^3 cel/mL. La OMS usa 100 000 cel/mL como el
+# umbral donde el riesgo en aguas recreativas pasa de bajo a moderado, que en
+# estas unidades son 100. Ref: OMS (2003, 2021), Chorus & Welch (2021).
 UMBRAL_OMS_CEL_ML = 100_000.0
-UMBRAL_CYA = UMBRAL_OMS_CEL_ML / 1_000.0  # = 100.0 en unidades del raster
-#
-# Los cubos .npz de analisis_completo.py recortan Cya a [0, 100] porque esa es
-# la escala visual del script Se2WaQ. El recorte cae justo en el umbral de la
-# OMS: todo pixel saturado en 100 es un pixel que iguala o supera las 100 000
-# cel/mL, asi que ``cya >= UMBRAL_CYA`` sigue marcando la clase correcta. Lo
-# que se pierde es la magnitud por encima del umbral, no la clase.
+UMBRAL_CYA = UMBRAL_OMS_CEL_ML / 1_000.0  # = 100.0
+# analisis_completo recorta Cya a [0, 100]. El recorte cae justo en el umbral,
+# asi que `cya >= UMBRAL_CYA` sigue marcando la clase correcta: se pierde la
+# magnitud por encima del corte, no la clase.
 UMBRAL_OMS_VIGILANCIA_CEL_ML = 20_000.0
 UMBRAL_CYA_VIGILANCIA = UMBRAL_OMS_VIGILANCIA_CEL_ML / 1_000.0  # = 20.0
 
-# ---------------------------------------------------------------------------
-# Ejercicio 3: fuga de informacion
-# ---------------------------------------------------------------------------
-# Cya = 115530.31 * ((B03 * B04) / B02) ** 2.38
-# La respuesta se construye umbralando Cya, asi que Cya y las tres bandas que
-# entran en su formula quedan prohibidas como predictoras. NDVI usa B04 y NDWI
-# usa B03, de modo que ambos comparten insumo con la respuesta: se reportan en
-# el dataset porque el enunciado los pide, pero no entran al conjunto estricto.
+# Cya = 115530.31 * ((B03 * B04) / B02) ** 2.38, asi que Cya y las tres bandas
+# de su formula quedan prohibidas. NDVI usa B04 y NDWI usa B03: comparten
+# insumo con la respuesta, van en el dataset pero no en el conjunto estricto.
 BANDAS_DE_LA_RESPUESTA = ["B02", "B03", "B04"]
 COLUMNAS_PROHIBIDAS = ["cya", "cya_log", "alta_presencia"] + BANDAS_DE_LA_RESPUESTA
 COLUMNAS_CONTAMINADAS = ["ndvi", "ndwi"]  # derivadas parciales de B03/B04
@@ -89,9 +65,7 @@ INDICES_RASTER = {"cya": "cianobacteria", "ndvi": "ndvi", "ndwi": "ndwi"}
 def descargar_bandas(conexion, nombre_lago: str) -> None:
     """Guarda las bandas de reflectancia como GeoTIFF, una carpeta por fecha.
 
-    La Parte I solo bajo NDVI, NDWI y Cya. Para tener predictoras espectrales
-    reales hace falta la reflectancia, sobre todo B08, que es la unica banda
-    del conjunto original que no participa en la formula de Cya.
+    B08 es la unica banda del conjunto original ajena a la formula de Cya.
     """
 
     datos = LAGOS[nombre_lago]
@@ -163,8 +137,8 @@ def _tabla_de_una_fecha(nombre_lago: str, fecha: str) -> Optional[pd.DataFrame]:
 def _tabla_desde_cubo(nombre_lago: str) -> Optional[pd.DataFrame]:
     """Convierte el cubo .npz de ``analisis_completo`` en filas por pixel.
 
-    El cubo ya viene reproyectado a EPSG:32615 y en metros, que es justo el
-    sistema que pide el ejercicio 6 para los bloques espaciales.
+    El cubo viene en EPSG:32615, el sistema en metros de los bloques del
+    ejercicio 6.
     """
 
     carpeta = CARPETA_RESULTADOS or (CARPETA_DATOS / "resultados")
@@ -207,18 +181,16 @@ def construir_dataset(
     lagos: Iterable[str] = ("Atitlan", "Amatitlan"),
     guardar: bool = True,
 ) -> pd.DataFrame:
-    """Ejercicio 1.1 y 1.3: arma la tabla y descarta observaciones invalidas.
+    """Arma la tabla y descarta observaciones invalidas.
 
-    Una fila por pixel valido dentro del lago. Se eliminan los pixeles sin dato
-    (nubes, sombras y nieve ya venian enmascarados desde openEO), los que NDWI
-    no reconoce como agua y los valores de Cya no finitos o negativos.
+    Una fila por pixel valido: se eliminan nubes y sombras, lo que NDWI no
+    reconoce como agua y los valores de Cya no finitos o negativos.
     """
 
     partes: List[pd.DataFrame] = []
     for lago in lagos:
-        # Fuente preferida: el cubo .npz de analisis_completo, que ya trae las
-        # 11 fechas juntas y en EPSG:32615. Si no existe, se cae a los GeoTIFF
-        # sueltos que produce el flujo de openEO.
+        # El cubo trae las 11 fechas juntas; si no existe se usan los GeoTIFF
+        # sueltos de openEO.
         cubo = _tabla_desde_cubo(lago)
         if cubo is not None:
             partes.append(cubo)
@@ -269,7 +241,7 @@ def construir_dataset(
 
 
 def resumen_dataset(datos: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-    """Ejercicio 1.4: totales, cobertura y calidad de cada variable."""
+    """Totales, cobertura y calidad de cada variable."""
 
     variables = pd.DataFrame(
         {
@@ -295,7 +267,7 @@ def resumen_dataset(datos: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 
 
 def eda(datos: pd.DataFrame, guardar: bool = True) -> Dict[str, pd.DataFrame]:
-    """Ejercicio 1.5: estadisticas y figuras del analisis exploratorio."""
+    """Estadisticas y figuras del analisis exploratorio."""
 
     import matplotlib.pyplot as plt
 
@@ -358,7 +330,7 @@ def eda(datos: pd.DataFrame, guardar: bool = True) -> Dict[str, pd.DataFrame]:
 # ---------------------------------------------------------------------------
 
 def agregar_respuesta(datos: pd.DataFrame, umbral: float = UMBRAL_CYA) -> pd.DataFrame:
-    """Ejercicio 2.1: variable binaria de alta presencia de cianobacteria."""
+    """Variable binaria de alta presencia de cianobacteria."""
 
     salida = datos.copy()
     salida["alta_presencia"] = (salida["cya"] >= umbral).astype(int)
@@ -367,7 +339,7 @@ def agregar_respuesta(datos: pd.DataFrame, umbral: float = UMBRAL_CYA) -> pd.Dat
 
 
 def distribucion_respuesta(datos: pd.DataFrame) -> Dict[str, pd.DataFrame]:
-    """Ejercicio 2.3 y 2.4: reparto de clases global, por lago y por fecha."""
+    """Reparto de clases global, por lago y por fecha."""
 
     def _tasa(grupo):
         return pd.Series(
@@ -421,21 +393,17 @@ def sensibilidad_umbral(datos: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def ingenieria_caracteristicas(datos: pd.DataFrame) -> pd.DataFrame:
-    """Ejercicio 3.3: variables temporales y espaciales derivadas.
-
-    Ninguna usa Cya ni las bandas de su formula.
-    """
+    """Variables temporales y espaciales derivadas. Ninguna usa Cya ni las
+    bandas de su formula."""
 
     salida = datos.copy()
     salida["mes"] = salida["fecha"].dt.month
     salida["dia_del_anio"] = salida["fecha"].dt.dayofyear
-    # En Guatemala la epoca lluviosa va de mayo a octubre; el aporte de
-    # nutrientes por escorrentia cambia entre ambas epocas.
+    # En Guatemala la epoca lluviosa va de mayo a octubre.
     salida["epoca_lluviosa"] = salida["mes"].between(5, 10).astype(int)
     salida["es_amatitlan"] = (salida["lago"] == "Amatitlan").astype(int)
 
-    # Distancia relativa al centroide del lago: aproxima la cercania a la
-    # orilla, donde entran los rios y se acumula la floracion.
+    # Aproxima la cercania a la orilla, donde entran los rios.
     ejes = ("x", "y") if "x" in salida.columns else ("lon", "lat")
     centros = salida.groupby("lago")[list(ejes)].transform("mean")
     salida["dist_centro"] = np.hypot(
@@ -454,11 +422,10 @@ PREDICTORES_BASE = [
 
 
 def predictores(datos: pd.DataFrame, estricto: bool = True) -> List[str]:
-    """Devuelve las columnas usables como predictoras.
+    """Columnas usables como predictoras.
 
-    ``estricto=True`` excluye NDVI y NDWI porque comparten bandas con la
-    formula de Cya. Con ``estricto=False`` se agregan, para poder medir cuanto
-    desempeno viene de esa dependencia.
+    ``estricto=True`` excluye NDVI y NDWI, que comparten bandas con la formula
+    de Cya.
     """
 
     candidatas = list(PREDICTORES_BASE)
@@ -471,7 +438,7 @@ def predictores(datos: pd.DataFrame, estricto: bool = True) -> List[str]:
 
 
 def descripcion_predictores(datos: pd.DataFrame) -> pd.DataFrame:
-    """Ejercicio 3.2: que representa cada variable y por que se incluye."""
+    """Que representa cada variable y por que se incluye."""
 
     catalogo = {
         "B08": ("Banda espectral", "Reflectancia en infrarrojo cercano. El agua limpia lo absorbe casi por completo, asi que valores altos delatan material particulado o biomasa flotante. Es la unica banda original ajena a la formula de Cya."),
@@ -498,7 +465,7 @@ def descripcion_predictores(datos: pd.DataFrame) -> pd.DataFrame:
 
 
 def revisar_fuga(datos: pd.DataFrame, columnas: Iterable[str]) -> pd.DataFrame:
-    """Ejercicio 2.5: deja explicito que se excluye y por que."""
+    """Deja explicito que se excluye y por que."""
 
     motivos = {
         "cya": "Es la variable con la que se construyo la respuesta.",

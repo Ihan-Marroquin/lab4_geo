@@ -75,28 +75,19 @@ instrucciones sí quedan en el repositorio.
 
 ## Parte 2: dataset para Machine Learning
 
-`src/ml_cianobacteria.py` convierte los resultados de la Parte 1 en una tabla donde cada fila es
-un píxel de agua con coordenadas, fecha, lago, bandas, NDVI, NDWI y Cya. Trae un
-autochequeo que corre sin necesidad de datos:
+`src/ml_cianobacteria.py` convierte los resultados de la Parte 1 en una tabla
+donde cada fila es un píxel de agua con coordenadas, fecha, lago, NDVI, NDWI y
+Cya. Lee los cubos `data/processed/resultados/cubo_<lago>.npz` que genera
+`python -m src.analisis_completo`, ya en EPSG:32615 y en metros.
 
 ```bash
-python -m src.ml_cianobacteria
+python -m src.ml_cianobacteria   # autochequeo, no necesita datos
 ```
 
-Lee de preferencia los cubos `data/processed/resultados/cubo_<lago>.npz` que
-genera `python -m src.analisis_completo`, porque ya vienen en EPSG:32615 y en
-metros, el sistema que pide la validación espacial. Si no existen, cae a los
-GeoTIFF del flujo openEO.
+La respuesta usa el umbral de la OMS de 100 000 células/mL (100 en unidades
+Se2WaQ), el mismo que la Parte 1 usó para los mapas.
 
-La variable respuesta usa el umbral de la OMS de 100 000 células/mL (100 en las
-unidades del raster Se2WaQ), el mismo que la Parte 1 usó para los mapas.
-
-Cya se calcula como `115530.31 * ((B03 * B04) / B02) ** 2.38`, así que **B02,
-B03 y B04 quedan excluidas como predictoras**. NDVI y NDWI comparten B04 y B03
-con esa fórmula: se reportan en el dataset pero solo entran al conjunto de
-predictoras "amplio", nunca al "estricto".
-
-El recorte de Cya a `[0, 100]` que hace `analisis_completo.py` cae justo sobre
-el umbral de la OMS, así que no afecta la clase: un píxel saturado en 100 es un
-píxel que iguala o supera las 100 000 cel/mL. Lo que se pierde es la magnitud
-por encima del umbral, no la pertenencia a la clase.
+Como `Cya = 115530.31 * ((B03 * B04) / B02) ** 2.38`, **B02, B03 y B04 quedan
+excluidas como predictoras**. NDVI y NDWI comparten B04 y B03 con esa fórmula:
+van en el dataset pero solo en el conjunto de predictoras "amplio", no en el
+"estricto".
